@@ -1,4 +1,6 @@
 # Unity-Visualizer-Scripts
 unity cs scripts
 
-current version in 0.3 at https://drive.google.com/open?id=0BxMCy1v17Azlenk0S0NkTVFJQ0U
+current version in 0.4 at https://drive.google.com/open?id=0BxMCy1v17AzlYy11ZDhiTzlvaGc
+-Теперь чанки загружаются матрицами из папки. Просто укажите путь и размеры матрицы, и программа обработает все существующие текстовые данные. (Обрабатывается только первая четверть).
+-Добавлена поле масштабирования - для задания коэффициента высоты.
