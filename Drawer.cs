@@ -329,29 +329,44 @@ public class Drawer : MonoBehaviour {
 				if (c!=null) 
 				{
 					Mesh m=c.GetComponent<MeshFilter>().mesh;
-					GameObject[] g=new GameObject[1+(chunk_size-2)*2]; //frame and inner lines
+					GameObject[] g=new GameObject[2*chunk_size];
 						int ind=0;
 						for (ind=0;ind<g.Length;ind++) g[ind]=new GameObject("line_renderer_basement");
-						LineRenderer lr=g[0].AddComponent<LineRenderer>();
-						LineRendererToGrid(lr,new Vector3[4] {m.vertices[0],m.vertices[chunk_size-1],m.vertices[chunk_size*chunk_size-1],m.vertices[chunk_size*(chunk_size-1)]});
-						ind=1;
-						int a=0;
-						for (a=1;a<chunk_size-1;a++)  //horizontal
+						LineRenderer lr;
+						Vector3[] positions;
+						ind=0;
+						int a=0,b=0;
+						for (a=0;a<chunk_size;a++)  //horizontal
 						{
+							g[ind].transform.parent=c.transform;
+							g[ind].transform.localPosition=Vector3.zero;
+							g[ind].name="grid"+ind.ToString();
+							positions=new Vector3[chunk_size];
+							for (b=0;b<chunk_size;b++)
+							{
+								positions[b]=m.vertices[a*chunk_size+b]+g[ind].transform.position;
+							}
 							lr=g[ind].AddComponent<LineRenderer>();
+							LineRendererToGrid(ref lr,positions);
 							ind++;
-							LineRendererToGrid(lr,new Vector3[2] {m.vertices[a*chunk_size],m.vertices[(a+1)*chunk_size-1]});
 						}
-						for (a=1;a<chunk_size-1;a++) //vertical
+						for (a=0;a<chunk_size;a++) //vertical
 						{
+							g[ind].transform.parent=c.transform;
+							g[ind].transform.localPosition=Vector3.zero;
+							g[ind].name="grid"+ind.ToString();
+							positions=new Vector3[chunk_size];
+							for (b=0;b<chunk_size;b++)
+							{
+								positions[b]=m.vertices[b*chunk_size+a]+g[ind].transform.position;
+							}
 							lr=g[ind].AddComponent<LineRenderer>();
+							LineRendererToGrid(ref lr,positions);
 							ind++;
-							LineRendererToGrid(lr,new Vector3[2] {m.vertices[a],m.vertices[m.vertices.Length-chunk_size+a]});
 						}
 						for (ind=0;ind<g.Length;ind++) 
 						{
-							g[ind].transform.parent=c.transform;
-							g[ind].name="grid"+ind.ToString();
+							
 						}
 				}
 				grid=false;
@@ -374,7 +389,7 @@ public class Drawer : MonoBehaviour {
 		}
 	}
 
-	void LineRendererToGrid (LineRenderer lr, Vector3[] points) {
+	void LineRendererToGrid (ref LineRenderer lr, Vector3[] points) {
 		lr.SetWidth(0.1f,0.1f);
 		lr.material=grid_material;
 		lr.receiveShadows=false;
