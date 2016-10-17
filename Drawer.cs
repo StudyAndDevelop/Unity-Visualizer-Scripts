@@ -4,30 +4,28 @@ using System.IO;
 
 public class Drawer : MonoBehaviour {
 
-	int chunk_size_x=64;
-	int chunk_size_y=64;
-	string size_x_s;
-	string size_y_s;
-	string constant_address="";
-	bool use_constant_address=false;
+	const int chunk_size=64;
+	public int height_coefficient=100;
+	int matrix_size_x=1;
+	int matrix_size_y=1;
+
+	string matrix_x_s;
+	string matrix_y_s;
+	string folder_name="";
+	string hc_string; //height_coefficient
 
 	public Material normal_material;
 	public Material vertex_color_material;
 	public Material grid_material;
 	public GameObject cam;
-	float[,] ar;
 
-	GameObject existing_chunk;
+	GameObject[] existing_chunks;
 	float average_height=0;
 
-	string file_name="ch3.json";
 	bool genered=false;
 	bool color_settings=false;
 	bool grid=false;
 	bool vertex_coloring=false;
-	LineRenderer[] grid_lines;
-	int grid_x=0;
-	int grid_y=0;
 	int k=16;
 
 	int max_attitude=100;
@@ -38,25 +36,25 @@ public class Drawer : MonoBehaviour {
 
 	void Start () {
 		k=Screen.height/9;
-		size_x_s=chunk_size_x.ToString();
-		size_y_s=chunk_size_y.ToString();
-		if (PlayerPrefs.HasKey("constantAddress")) 
+		matrix_x_s=matrix_size_x.ToString();
+		matrix_y_s=matrix_size_y.ToString();
+		folder_name=Application.dataPath+"/";
+		hc_string=height_coefficient.ToString();
+
+		if (PlayerPrefs.HasKey("previous_folder_name")) 
 		{
-			constant_address=PlayerPrefs.GetString("constantAddress");
-			if (constant_address!="") use_constant_address=true;
+			folder_name=PlayerPrefs.GetString("previous_folder_name");
 		}
-		if (PlayerPrefs.HasKey("lastFile")) file_name=PlayerPrefs.GetString("lastFile");
+		existing_chunks=new GameObject[0];
 	}		
 
-	public void ReadData (string n) {
-		string path="";
-		if (use_constant_address) path=constant_address+n;
-			else path=Application.dataPath+"/"+n;
+	GameObject LoadChunk (string path) {
+		if (!File.Exists(path)) {return (null);print("no chunk");}
 		string dstring="";
 		int readpos=0; //положение считывающего курсора
 		int ix=0;
 		int iy=0;
-		ar=new float[chunk_size_x,chunk_size_y];
+		float[,] vertex_array=new float[chunk_size,chunk_size]; //сетка высот
 		int wp=0; //целая часть
 		int pp=0; // дробная часть
 		int it=-1; // индекс точки
@@ -75,13 +73,13 @@ public class Drawer : MonoBehaviour {
 						dstring=sr.ReadLine(); //по идее здесь должна быть обработка вложенных данных
 					}
 				}
-				while (sr.Peek()>=0&&ix<chunk_size_x) 
+				while (sr.Peek()>=0&&ix<chunk_size) 
 				{ 
 					dstring=sr.ReadLine();
 					s_length=dstring.Length;
 					if (dstring[s_length-2]==' ') {s_length--;dstring=dstring.Substring(0,s_length);} //отрезаем последний пробел
-					if (s_length==1) {ix=chunk_size_x;break;} //если это последняя строка со скобкой, то выходим
-					while (readpos<s_length&&iy<chunk_size_y) 
+					if (s_length==1) {ix=chunk_size;break;} //если это последняя строка со скобкой, то выходим
+					while (readpos<s_length&&iy<chunk_size) 
 						{
 						wp=0;pp=0;it=-1;ip=-1;
 						if (!json_reading) it=dstring.IndexOf('.',readpos); else it=dstring.IndexOf(',',readpos);
@@ -90,7 +88,7 @@ public class Drawer : MonoBehaviour {
 						{
 							if (it==-1) 
 							{//последнее число без точки
-								ar[ix,iy]=int.Parse(dstring.Substring(readpos,s_length-readpos));
+								vertex_array[ix,iy]=int.Parse(dstring.Substring(readpos,s_length-readpos));
 								iy++; //страховка
 								readpos=s_length+1;
 								break;
@@ -100,7 +98,7 @@ public class Drawer : MonoBehaviour {
 								wp=int.Parse(dstring.Substring(readpos,it-readpos));
 								pp=int.Parse(dstring.Substring(it+1,s_length-1-it));
 								if (wp<0) pp*=-1;
-								ar[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
+								vertex_array[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
 								iy++; //страховка
 								readpos=s_length+1;
 								break;
@@ -110,7 +108,7 @@ public class Drawer : MonoBehaviour {
 						{
 							if (it>ip||it==-1) 
 							{//целое число
-								ar[ix,iy]=int.Parse(dstring.Substring(readpos,ip-readpos));
+								vertex_array[ix,iy]=int.Parse(dstring.Substring(readpos,ip-readpos));
 								iy++;
 								readpos=ip+1;
 							}
@@ -119,7 +117,7 @@ public class Drawer : MonoBehaviour {
 								wp=int.Parse(dstring.Substring(readpos,it-readpos));
 								pp=int.Parse(dstring.Substring(it+1,ip-it-1));
 								if (wp<0) pp*=-1;
-								ar[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
+								vertex_array[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
 								iy++;
 								readpos=ip+1;
 							}
@@ -130,53 +128,48 @@ public class Drawer : MonoBehaviour {
 					iy=0;
 			}
 			}
-
-			MakeTerrain(ar,chunk_size_x,chunk_size_y);
 		} 
 		catch (IOException e)  
 		{  
-			print ("no data file");
+			print ("cannot find file");
+			return null;
 		}  
-	}
 
-
-	public void MakeTerrain (float[,] array,int xsize, int ysize) {
 		GameObject chunk=new GameObject("chunk");
 		chunk.transform.position=Vector3.zero;
 		MeshRenderer mr=chunk.AddComponent<MeshRenderer>();
 		mr.material=normal_material;
 		Mesh mesh=chunk.AddComponent<MeshFilter>().mesh;
-		Vector3[] vertices = new Vector3[array.Length];
-		Color[] colors=new Color[array.Length];
+		Vector3[] vertices = new Vector3[vertex_array.Length];
+		Color[] colors=new Color[vertex_array.Length];
 		Color c_color=Color.white; //current color
-		Vector2[] uvs=new Vector2[array.Length];
+		Vector2[] uvs=new Vector2[vertex_array.Length];
 		float sum_height=0;
 
 		int c=0;
-		for (int i=0;i<xsize;i++) 
+		for (int i=0;i<chunk_size;i++) 
 		{
-			for (int j=0;j<ysize;j++) 
+			for (int j=0;j<chunk_size;j++) 
 			{
-				vertices[c] = new Vector3(j,array[i,j],chunk_size_y-i-1);
+				vertices[c] = new Vector3(j,vertex_array[i,j]*height_coefficient,chunk_size-i-1);
 				sum_height+=vertices[c].y;
-				//print (vertices[c]);
 				c++;
 			}
 		}
-		int[] triangles=new int[xsize*ysize*6];
+		int[] triangles=new int[chunk_size*chunk_size*6];
 		c=0;
 
-		for (int i=0;i<xsize-1;i++) 
+		for (int i=0;i<chunk_size-1;i++) 
 		{
-			for (int j=0;j<ysize-1;j++) 
+			for (int j=0;j<chunk_size-1;j++) 
 			{  //  a b
 				// c d
-				triangles[c]=(i+1)*chunk_size_y+j; //c
-				triangles[c+1]=i*chunk_size_y+j; //a
-				triangles[c+2]=i*chunk_size_y+j+1; //b
-				triangles[c+3]=(i+1)*chunk_size_y+j; //c
-				triangles [c+4]=i*chunk_size_y+j+1; //b
-				triangles[c+5]=(i+1)*chunk_size_y+j+1; //d
+				triangles[c]=(i+1)*chunk_size+j; //c
+				triangles[c+1]=i*chunk_size+j; //a
+				triangles[c+2]=i*chunk_size+j+1; //b
+				triangles[c+3]=(i+1)*chunk_size+j; //c
+				triangles [c+4]=i*chunk_size+j+1; //b
+				triangles[c+5]=(i+1)*chunk_size+j+1; //d
 				c+=6;
 			}
 			}
@@ -185,23 +178,16 @@ public class Drawer : MonoBehaviour {
 		mesh.uv=uvs;
 		mesh.RecalculateNormals();
 		mesh.RecalculateBounds();
-		if (existing_chunk) 
-		{
-			Destroy(existing_chunk);
-			existing_chunk=chunk;
-		}
-		else 
-		{
-			existing_chunk=chunk;
-		}
-		average_height=sum_height/vertices.Length;
-		cam.transform.position=existing_chunk.transform.position+new Vector3(-5,mesh.vertices[0].y+10,-5);
-		cam.transform.LookAt(existing_chunk.transform.position+new Vector3(chunk_size_x,mesh.vertices[mesh.vertices.Length/2].y,chunk_size_y));
+		return (chunk);
 	}
 
-	void VertexPaint () 
+	void VertexPaint (GameObject chunk) 
 	{
-		Mesh m=existing_chunk.GetComponent<MeshFilter>().mesh;
+		if (!chunk.GetComponent<MeshFilter>()) return;
+		Mesh m=chunk.GetComponent<MeshFilter>().mesh;
+		MeshRenderer mr=chunk.GetComponent<MeshRenderer>();
+		if (m==null||mr==null) return;
+
 		float h=0;
 		Color[] colors=new Color [m.vertices.Length];
 		Color c_color=Color.white;
@@ -223,33 +209,59 @@ public class Drawer : MonoBehaviour {
 			colors[c]=c_color;
 		}
 		m.colors=colors;
-		existing_chunk.GetComponent<MeshRenderer>().material=vertex_color_material;
+		mr.material=vertex_color_material;
+	}
+
+	void CreateMatrix(string folder_address,int size_x,int size_y) 
+	{
+		//cleaning previous matrix
+		if (existing_chunks.Length!=0) 	
+			foreach (GameObject c in existing_chunks) 
+			{
+				if (c!=null) Destroy(c);
+			}
+		existing_chunks=new GameObject[size_x*size_y];
+
+
+		//if (use_constant_address) path=constant_address+n;
+		//else path=Application.dataPath+"/"+n;
+
+		string path="";
+		GameObject chunk;
+		for (int i=0;i<size_x;i++) 
+		{
+			for (int j=0;j<size_y;j++) 
+			{
+				path=folder_address+"/Chunk ("+i.ToString()+","+j.ToString()+").json";
+				chunk=LoadChunk(path);
+				if (chunk!=null)	
+				{
+					existing_chunks[i*size_x+j]=chunk;
+					existing_chunks[i*size_x+j].transform.position=new Vector3(i*chunk_size-1*i,0,j*chunk_size-1*j);
+					//print ("chunk succesfully generated");
+				}
+			}
+		}
 	}
 
 	void OnGUI() {
 		if (!genered) {
-			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-3*k,2*k,k),"Имя файла в папке игры");
-			file_name=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2-2*k,4*k,k),file_name);
-			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,2*k,k),"Размеры чанка:");
-			size_x_s=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2,2*k,k),size_x_s);
-			size_y_s=GUI.TextField(new Rect(Screen.width/2,Screen.height/2,2*k,k),size_y_s);
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-3*k,2*k,k),"Путь до папки с данными:");
+			folder_name=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2-2*k,4*k,k),folder_name);
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,2*k,k),"Размеры матрицы чанков:");
+			matrix_x_s=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2,2*k,k),matrix_x_s);
+			matrix_y_s=GUI.TextField(new Rect(Screen.width/2,Screen.height/2,2*k,k),matrix_y_s);
 
-			GUI.Label(new Rect(Screen.width/2-5*k,0,2*k,k*0.75f),"Адрес папки с файлами");
-			constant_address=GUI.TextField(new Rect(Screen.width/2-3*k,0,6*k,k*0.75f),constant_address);
-			if (GUI.Button(new Rect(Screen.width/2+3*k,0,2*k,0.75f*k),"Применить")) 
-			{
-				PlayerPrefs.SetString("constantAddress",constant_address);
-				if (constant_address!="") use_constant_address=true;
-				else use_constant_address=false;
-			}
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2+2*k,2*k,k/2),"Коэффициент высоты");
+			hc_string=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2+2.5f*k,k,k/2),hc_string);
 
 			if (GUI.Button(new Rect(Screen.width/2-k,Screen.height/2+k,2*k,k),"Сгенерировать")) {
-				if (int.TryParse(size_x_s,out chunk_size_x)&&int.TryParse(size_y_s,out chunk_size_y)) 
-				{
+				PlayerPrefs.SetString("previous_folder_name",folder_name);
+				int.TryParse(matrix_x_s,out matrix_size_x);
+				int.TryParse(matrix_y_s,out matrix_size_y);
+				int.TryParse(hc_string,out height_coefficient);
+				CreateMatrix(folder_name,matrix_size_x,matrix_size_y);
 				genered=true;
-					PlayerPrefs.SetString("lastFile",file_name);
-				ReadData(file_name);
-				}
 			}
 		}
 		else 
@@ -280,13 +292,22 @@ public class Drawer : MonoBehaviour {
 				vertex_coloring=true;
 				int.TryParse(enter_string1,out max_attitude);
 				int.TryParse(enter_string2, out min_attitude);
-				if (existing_chunk!=null) VertexPaint();
+				if (existing_chunks.Length!=0) 
+				{
+					foreach (GameObject c in existing_chunks) 	VertexPaint(c);
+				}
 				color_settings=false;
 			}
 			if (GUI.Button(new Rect(3*k,2*k,2*k,k/2),"Отключить")) 
 			{
 				vertex_coloring=false;
-				if (existing_chunk!=null) existing_chunk.GetComponent<MeshRenderer>().material=normal_material;
+				if (existing_chunks.Length!=0) 
+				{
+					foreach (GameObject c in existing_chunks) 
+					{
+					c.GetComponent<MeshRenderer>().material=normal_material;
+					}
+				}
 				color_settings=false;
 			}
 		}
@@ -298,65 +319,70 @@ public class Drawer : MonoBehaviour {
 			{
 				grid=true;
 				color_settings=false;
-				enter_string1=grid_x.ToString();
-				enter_string2=grid_y.ToString();
 			}
 		}
+
 		if (grid) {
-			GUI.Label(new Rect(k,2*k,2*k,k/2),"длина:");
-			GUI.Label(new Rect(k,2.5f*k,2*k,k/2),"ширина:");
-			enter_string1=GUI.TextField(new Rect(3*k,2*k,k,k/2),enter_string1);
-			enter_string2=GUI.TextField(new Rect(3*k,2.5f*k,k,k/2),enter_string2);
 			if (GUI.Button(new Rect(k,3*k,1.5f*k,k/2),"Включить")) 
 			{
-				int.TryParse(enter_string1,out grid_x);
-				int.TryParse(enter_string2,out grid_y);
-				if (grid_x>chunk_size_x) grid_x=chunk_size_x;
-				if (grid_y>chunk_size_y) grid_y=chunk_size_y;
-				if (existing_chunk&&grid_x>0&&grid_y>0) 
+				foreach (GameObject c in existing_chunks) {
+				if (c!=null) 
 				{
-					Mesh m=existing_chunk.GetComponent<MeshFilter>().mesh;
-					GameObject g=null;
-					grid_lines=new LineRenderer[grid_x+grid_y];
-					for (int i=0;i<grid_x;i++) 
-					{  
-						g=new GameObject("lr"+i.ToString());
-						grid_lines[i]=g.AddComponent<LineRenderer>();
-						grid_lines[i].SetWidth(0.1f,0.1f);
-						grid_lines[i].material=grid_material;
-						grid_lines[i].receiveShadows=false;
-						grid_lines[i].shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-						grid_lines[i].SetVertexCount(grid_x);
-						for (int j=0;j<grid_y;j++) 
+					Mesh m=c.GetComponent<MeshFilter>().mesh;
+					GameObject[] g=new GameObject[1+(chunk_size-2)*2]; //frame and inner lines
+						int ind=0;
+						for (ind=0;ind<g.Length;ind++) g[ind]=new GameObject("line_renderer_basement");
+						LineRenderer lr=g[0].AddComponent<LineRenderer>();
+						LineRendererToGrid(lr,new Vector3[4] {m.vertices[0],m.vertices[chunk_size-1],m.vertices[chunk_size*chunk_size-1],m.vertices[chunk_size*(chunk_size-1)]});
+						ind=1;
+						int a=0;
+						for (a=1;a<chunk_size-1;a++)  //horizontal
 						{
-							grid_lines[i].SetPosition(j,m.vertices[i*chunk_size_y+j]);
+							lr=g[ind].AddComponent<LineRenderer>();
+							ind++;
+							LineRendererToGrid(lr,new Vector3[2] {m.vertices[a*chunk_size],m.vertices[(a+1)*chunk_size-1]});
 						}
-					}
-					for (int i=grid_x;i<grid_y+grid_x;i++) 
-					{
-						g=new GameObject("lr"+i.ToString());
-						grid_lines[i]=g.AddComponent<LineRenderer>();
-						grid_lines[i].SetWidth(0.1f,0.1f);
-						grid_lines[i].material=grid_material;
-						grid_lines[i].receiveShadows=false;
-						grid_lines[i].shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-						grid_lines[i].SetVertexCount(grid_y);
-						for (int j=0;j<grid_x;j++) 
+						for (a=1;a<chunk_size-1;a++) //vertical
 						{
-							grid_lines[i].SetPosition(j,m.vertices[j*chunk_size_y+i-grid_x]);
+							lr=g[ind].AddComponent<LineRenderer>();
+							ind++;
+							LineRendererToGrid(lr,new Vector3[2] {m.vertices[a],m.vertices[m.vertices.Length-chunk_size+a]});
 						}
-					}
+						for (ind=0;ind<g.Length;ind++) 
+						{
+							g[ind].transform.parent=c.transform;
+							g[ind].name="grid"+ind.ToString();
+						}
 				}
 				grid=false;
 			}
+			}
 			if (GUI.Button(new Rect(2.5f*k,3*k,1.5f*k,k/2),"Отключить")) 
 			{
-				foreach (LineRenderer lr in grid_lines) {Destroy(lr.gameObject);}
-				grid_lines=new LineRenderer[0];
-				grid=false;
+				foreach (GameObject c in existing_chunks) 
+				{
+					if (c==null) continue;
+					int i=0;
+					while (true)  //ай-яй-яй!
+					{
+						Transform t=c.transform.FindChild("grid"+i.ToString());
+						if (t!=null) Destroy(t.gameObject);
+						else break;
+					}
+				}
 			}
 		}
 	}
+
+	void LineRendererToGrid (LineRenderer lr, Vector3[] points) {
+		lr.SetWidth(0.1f,0.1f);
+		lr.material=grid_material;
+		lr.receiveShadows=false;
+		lr.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+		lr.SetVertexCount(points.Length);
+		lr.SetPositions(points);
+	}
+		
 }
 
 
