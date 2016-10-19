@@ -55,73 +55,28 @@ public class Drawer : MonoBehaviour {
 		int ix=0;
 		int iy=0;
 		float[,] vertex_array=new float[chunk_size,chunk_size]; //сетка высот
-		int wp=0; //целая часть
-		int pp=0; // дробная часть
-		int it=-1; // индекс точки
 		int ip=-1; //индекс пробела
-		int s_length=0; // длина строки
-		bool json_reading=false;
 		try 
 		{
 			using (StreamReader sr = new StreamReader(path)) 
 			{
-				if (Path.GetExtension(path)==".json") 
-				{
-					json_reading=true;
-					for (byte ji=0;ji<10;ji++) 
-					{
-						dstring=sr.ReadLine(); //по идее здесь должна быть обработка вложенных данных
-					}
-				}
+				for (int y=0;y<6;y++) sr.ReadLine();
 				while (sr.Peek()>=0&&ix<chunk_size) 
 				{ 
 					dstring=sr.ReadLine();
-					s_length=dstring.Length;
-					if (dstring[s_length-2]==' ') {s_length--;dstring=dstring.Substring(0,s_length);} //отрезаем последний пробел
-					if (s_length==1) {ix=chunk_size;break;} //если это последняя строка со скобкой, то выходим
-					while (readpos<s_length&&iy<chunk_size) 
+					dstring=dstring.Replace(",",".");
+					//print (dstring);
+					if (dstring[dstring.Length-1]==' ') dstring=dstring.Substring(0,dstring.Length-1);
+					if (dstring.Length==1) {ix=chunk_size;break;} //если это последняя строка со скобкой, то выходим
+					while (readpos<dstring.Length&&iy<chunk_size) 
 						{
-						wp=0;pp=0;it=-1;ip=-1;
-						if (!json_reading) it=dstring.IndexOf('.',readpos); else it=dstring.IndexOf(',',readpos);
+						int a=-1;
 						ip=dstring.IndexOf(' ',readpos); 
-						if (ip==-1) 
-						{
-							if (it==-1) 
-							{//последнее число без точки
-								vertex_array[ix,iy]=int.Parse(dstring.Substring(readpos,s_length-readpos));
-								iy++; //страховка
-								readpos=s_length+1;
-								break;
-							}
-							else 
-							{//последнее число с точкой
-								wp=int.Parse(dstring.Substring(readpos,it-readpos));
-								pp=int.Parse(dstring.Substring(it+1,s_length-1-it));
-								if (wp<0) pp*=-1;
-								vertex_array[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
-								iy++; //страховка
-								readpos=s_length+1;
-								break;
-							}
-						}
-						else 
-						{
-							if (it>ip||it==-1) 
-							{//целое число
-								vertex_array[ix,iy]=int.Parse(dstring.Substring(readpos,ip-readpos));
-								iy++;
-								readpos=ip+1;
-							}
-							else 
-							{
-								wp=int.Parse(dstring.Substring(readpos,it-readpos));
-								pp=int.Parse(dstring.Substring(it+1,ip-it-1));
-								if (wp<0) pp*=-1;
-								vertex_array[ix,iy]=wp+pp*Mathf.Pow(0.1f,s_length-1-it);
-								iy++;
-								readpos=ip+1;
-							}
-						}
+						if (ip!=-1) a=ip-readpos; 	else 	a=dstring.Length-readpos;
+						if (!float.TryParse(dstring.Substring(readpos,a),out vertex_array[ix,iy])) {print (dstring.Substring(readpos,a));vertex_array[ix,iy]=-100;}
+							//else print(vertex_array[ix,iy]);
+							iy++;
+							readpos+=a+1;
 						}
 					ix++;
 					readpos=0;
@@ -178,8 +133,10 @@ public class Drawer : MonoBehaviour {
 		mesh.uv=uvs;
 		mesh.RecalculateNormals();
 		mesh.RecalculateBounds();
+		mesh.Optimize();
 		return (chunk);
 	}
+		
 
 	void VertexPaint (GameObject chunk) 
 	{
@@ -230,12 +187,27 @@ public class Drawer : MonoBehaviour {
 		GameObject chunk;
 		for (int i=0;i<size_x;i++) 
 		{
-			for (int j=0;j<size_y;j++) 
+			for (int j=0;j<size_y;j++) //q1
 			{
 				path=folder_address+"/Chunk ("+i.ToString()+","+j.ToString()+").json";
 				chunk=LoadChunk(path);
 				if (chunk!=null)	
 				{
+					chunk.layer=8;
+					chunk.AddComponent<MeshCollider>();
+					existing_chunks[i*size_x+j]=chunk;
+					existing_chunks[i*size_x+j].transform.position=new Vector3(i*chunk_size-1*i,0,j*chunk_size-1*j);
+					//print ("chunk succesfully generated");
+				}
+			}
+			for (int j=0;j<size_y;j++) //q1
+			{
+				path=folder_address+"/Chunk ("+i.ToString()+","+j.ToString()+").json";
+				chunk=LoadChunk(path);
+				if (chunk!=null)	
+				{
+					chunk.layer=8;
+					chunk.AddComponent<MeshCollider>();
 					existing_chunks[i*size_x+j]=chunk;
 					existing_chunks[i*size_x+j].transform.position=new Vector3(i*chunk_size-1*i,0,j*chunk_size-1*j);
 					//print ("chunk succesfully generated");
@@ -266,7 +238,6 @@ public class Drawer : MonoBehaviour {
 		}
 		else 
 		{
-			GUI.Label(new Rect(0,0,4*k,k),Application.dataPath);
 			if (GUI.Button(new Rect(Screen.width-4*k,0,2*k,k/2),"Перегенерировать")) genered=false;
 			if (GUI.Button(new Rect(Screen.width-2*k,0,2*k,k/2),"Выход")) Application.Quit();
 		}
@@ -378,11 +349,11 @@ public class Drawer : MonoBehaviour {
 				{
 					if (c==null) continue;
 					int i=0;
-					while (true)  //ай-яй-яй!
+					Transform t;
+					for (i=0;i<c.transform.childCount;i++)
 					{
-						Transform t=c.transform.FindChild("grid"+i.ToString());
-						if (t!=null) Destroy(t.gameObject);
-						else break;
+						t=c.transform.GetChild(i);
+						if (t.name.Substring(0,4)=="grid"&&t.gameObject.GetComponent<LineRenderer>()!=null) Destroy(t.gameObject);
 					}
 				}
 			}
