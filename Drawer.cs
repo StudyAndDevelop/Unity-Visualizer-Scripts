@@ -1,43 +1,48 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.IO;
+using System.Collections.Generic;
 
 public class Drawer : MonoBehaviour {
-
-	const int chunk_size=64;
-	public int height_coefficient=100;
-	int matrix_size_x=1;
-	int matrix_size_y=1;
-
-	string matrix_x_s;
-	string matrix_y_s;
-	string folder_name="";
-	string hc_string; //height_coefficient
-
+	// 1) Inspector-Input Objects	
 	public Material normal_material;
 	public Material vertex_color_material;
 	public Material grid_material;
 	public GameObject cam;
+	// 2) Inspector-Input Technical Values
+	const int chunk_size=64;
+	public int height_coefficient=100;
+	int matrix_radius=1;
 
-	GameObject[] existing_chunks;
-	float average_height=0;
-
+	string matrix_radius_s;
+	string folder_name="";
+	string hc_string; //height_coefficient
+	// 3) Inspector-Input Game Values
+	// 4) Inspector-Input Textures and Sounds
+	// 5) Script-using Objects
+	public List <Chunk> playzone;
+	// 6) Script-using Values
 	bool genered=false;
+	bool firstgen=true;
 	bool color_settings=false;
 	bool grid=false;
 	bool vertex_coloring=false;
-	int k=16;
 
+	int k=16;
 	int max_attitude=100;
 	int min_attitude=0;
+	int player_grid_pos_x=0;
+	int player_grid_pos_y=0;
 
 	string enter_string1; //рабочие буферные строки для введения данных
 	string enter_string2;
+	// 7) Script-using Textures
+	// 8) Scripts references
+	// 9) Debugging variables
 
 	void Start () {
 		k=Screen.height/9;
-		matrix_x_s=matrix_size_x.ToString();
-		matrix_y_s=matrix_size_y.ToString();
+		matrix_radius_s=matrix_radius.ToString();
 		folder_name=Application.dataPath+"/";
 		hc_string=height_coefficient.ToString();
 
@@ -45,10 +50,9 @@ public class Drawer : MonoBehaviour {
 		{
 			folder_name=PlayerPrefs.GetString("previous_folder_name");
 		}
-		existing_chunks=new GameObject[0];
 	}		
 
-	GameObject LoadChunk (string path) {
+	Chunk LoadChunk (string path) {
 		if (!File.Exists(path)) {return (null);print("no chunk");}
 		string dstring="";
 		int readpos=0; //положение считывающего курсора
@@ -56,11 +60,17 @@ public class Drawer : MonoBehaviour {
 		int iy=0;
 		float[,] vertex_array=new float[chunk_size,chunk_size]; //сетка высот
 		int ip=-1; //индекс пробела
+		Chunk chunk=new GameObject("chunk").AddComponent<Chunk>();
 		try 
 		{
 			using (StreamReader sr = new StreamReader(path)) 
 			{
-				for (int y=0;y<6;y++) sr.ReadLine();
+				chunk.ID=int.Parse(sr.ReadLine().Substring(3));
+				chunk.grid_pos_x=int.Parse(sr.ReadLine().Substring(5));
+				chunk.grid_pos_y=int.Parse(sr.ReadLine().Substring(5));
+				chunk.SetBiome(sr.ReadLine().Substring(6));
+				chunk.BiomeName=sr.ReadLine().Substring(10);
+				sr.ReadLine(); //skip "Cords"
 				while (sr.Peek()>=0&&ix<chunk_size) 
 				{ 
 					dstring=sr.ReadLine();
@@ -89,12 +99,11 @@ public class Drawer : MonoBehaviour {
 			print ("cannot find file");
 			return null;
 		}  
-
-		GameObject chunk=new GameObject("chunk");
+			
 		chunk.transform.position=Vector3.zero;
-		MeshRenderer mr=chunk.AddComponent<MeshRenderer>();
-		mr.material=normal_material;
-		Mesh mesh=chunk.AddComponent<MeshFilter>().mesh;
+		chunk.mr=chunk.gameObject.AddComponent<MeshRenderer>();
+		chunk.mr.material=normal_material;
+		chunk.m=chunk.gameObject.AddComponent<MeshFilter>().mesh;
 		Vector3[] vertices = new Vector3[vertex_array.Length];
 		Color[] colors=new Color[vertex_array.Length];
 		Color c_color=Color.white; //current color
@@ -128,29 +137,25 @@ public class Drawer : MonoBehaviour {
 				c+=6;
 			}
 			}
-		mesh.vertices = vertices;
-		mesh.triangles=triangles;
-		mesh.uv=uvs;
-		mesh.RecalculateNormals();
-		mesh.RecalculateBounds();
-		mesh.Optimize();
+		chunk.m.vertices = vertices;
+		chunk.m.triangles=triangles;
+		chunk.m.uv=uvs;
+		chunk.m.RecalculateNormals();
+		chunk.m.RecalculateBounds();
+		chunk.m.Optimize();
 		return (chunk);
 	}
 		
 
-	void VertexPaint (GameObject chunk) 
+	void VertexPaint (Chunk chunk) 
 	{
-		if (!chunk.GetComponent<MeshFilter>()) return;
-		Mesh m=chunk.GetComponent<MeshFilter>().mesh;
-		MeshRenderer mr=chunk.GetComponent<MeshRenderer>();
-		if (m==null||mr==null) return;
-
+		if (chunk.m==null||chunk.mr==null) return;
 		float h=0;
-		Color[] colors=new Color [m.vertices.Length];
+		Color[] colors=new Color [chunk.m.vertices.Length];
 		Color c_color=Color.white;
-		for (int c=0;c<m.vertices.Length;c++) 
+		for (int c=0;c<chunk.m.vertices.Length;c++) 
 		{
-			h=m.vertices[c].y;
+			h=chunk.m.vertices[c].y;
 			if (h>0) 
 			{
 				h/=max_attitude;
@@ -165,74 +170,74 @@ public class Drawer : MonoBehaviour {
 			}
 			colors[c]=c_color;
 		}
-		m.colors=colors;
-		mr.material=vertex_color_material;
+		chunk.m.colors=colors;
+		chunk.mr.material=vertex_color_material;
 	}
 
-	void CreateMatrix(string folder_address,int size_x,int size_y) 
+	void CreateMatrix(string folder_address,int radius) 
 	{
-		//cleaning previous matrix
-		if (existing_chunks.Length!=0) 	
-			foreach (GameObject c in existing_chunks) 
-			{
-				if (c!=null) Destroy(c);
-			}
-		existing_chunks=new GameObject[size_x*size_y];
-
-
+		if (firstgen)
+		{	
+			List<Vector2> chunks_numbers=GetBlocksInCirle(radius,Vector2.zero);
+			playzone.Clear();
 		//if (use_constant_address) path=constant_address+n;
 		//else path=Application.dataPath+"/"+n;
 
 		string path="";
-		GameObject chunk;
-		for (int i=0;i<size_x;i++) 
+		Chunk chunk;
+
+			foreach (Vector2 pos in chunks_numbers) 
+			{
+				print (pos);
+				path=folder_address+"/Chunk ("+pos.x.ToString()+","+pos.y.ToString()+").json";
+				chunk=LoadChunk(path);
+				if (chunk!=null)	
+				{
+					chunk.gameObject.layer=8;
+					chunk.gameObject.AddComponent<MeshCollider>();
+					playzone.Add(chunk);
+					chunk.transform.position=new Vector3(pos.x*chunk_size-1*pos.x,0,pos.y*chunk_size-1*pos.y);
+				}
+			}	
+		}
+	}
+
+	List<Vector2> GetBlocksInCirle(int radius, Vector2 pos)
+	{
+		Vector2 a,b,c,d;              // c d
+		List<Vector2> blocks=new List<Vector2>();	 // a b
+		int count=0;
+		for (int x=(int)pos.x-radius;x<(int)pos.x+radius;x++)
 		{
-			for (int j=0;j<size_y;j++) //q1
+			for (int y=(int)pos.y-radius;y<(int)pos.y+radius;y++)
 			{
-				path=folder_address+"/Chunk ("+i.ToString()+","+j.ToString()+").json";
-				chunk=LoadChunk(path);
-				if (chunk!=null)	
-				{
-					chunk.layer=8;
-					chunk.AddComponent<MeshCollider>();
-					existing_chunks[i*size_x+j]=chunk;
-					existing_chunks[i*size_x+j].transform.position=new Vector3(i*chunk_size-1*i,0,j*chunk_size-1*j);
-					//print ("chunk succesfully generated");
-				}
-			}
-			for (int j=0;j<size_y;j++) //q1
-			{
-				path=folder_address+"/Chunk ("+i.ToString()+","+j.ToString()+").json";
-				chunk=LoadChunk(path);
-				if (chunk!=null)	
-				{
-					chunk.layer=8;
-					chunk.AddComponent<MeshCollider>();
-					existing_chunks[i*size_x+j]=chunk;
-					existing_chunks[i*size_x+j].transform.position=new Vector3(i*chunk_size-1*i,0,j*chunk_size-1*j);
-					//print ("chunk succesfully generated");
-				}
+				a=new Vector2(x,y); b=new Vector2(x+1,y); c=new Vector2(x,y+1);d=new Vector2(x+1,y+1);
+				count=0;
+				if (Vector2.Distance(a,pos)<radius) count++; 
+				if (Vector2.Distance(b,pos)<radius) count++; 
+				if (Vector2.Distance(c,pos)<radius) count++; 
+				if (Vector2.Distance(d,pos)<radius) count++; 
+				if (count>2) blocks.Add(a);
 			}
 		}
+		return (blocks);
 	}
 
 	void OnGUI() {
 		if (!genered) {
 			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-3*k,2*k,k),"Путь до папки с данными:");
 			folder_name=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2-2*k,4*k,k),folder_name);
-			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,2*k,k),"Размеры матрицы чанков:");
-			matrix_x_s=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2,2*k,k),matrix_x_s);
-			matrix_y_s=GUI.TextField(new Rect(Screen.width/2,Screen.height/2,2*k,k),matrix_y_s);
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,2*k,k),"Радиус игровой области ( в чанках):");
+			matrix_radius_s=GUI.TextField(new Rect(Screen.width/2,Screen.height/2,2*k,k),matrix_radius_s);
 
 			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2+2*k,2*k,k/2),"Коэффициент высоты");
 			hc_string=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2+2.5f*k,k,k/2),hc_string);
 
 			if (GUI.Button(new Rect(Screen.width/2-k,Screen.height/2+k,2*k,k),"Сгенерировать")) {
 				PlayerPrefs.SetString("previous_folder_name",folder_name);
-				int.TryParse(matrix_x_s,out matrix_size_x);
-				int.TryParse(matrix_y_s,out matrix_size_y);
+				int.TryParse(matrix_radius_s,out matrix_radius);
 				int.TryParse(hc_string,out height_coefficient);
-				CreateMatrix(folder_name,matrix_size_x,matrix_size_y);
+				CreateMatrix(folder_name,matrix_radius);
 				genered=true;
 			}
 		}
@@ -263,18 +268,18 @@ public class Drawer : MonoBehaviour {
 				vertex_coloring=true;
 				int.TryParse(enter_string1,out max_attitude);
 				int.TryParse(enter_string2, out min_attitude);
-				if (existing_chunks.Length!=0) 
+				if (playzone.Count!=0) 
 				{
-					foreach (GameObject c in existing_chunks) 	VertexPaint(c);
+					foreach (Chunk c in playzone) 	VertexPaint(c);
 				}
 				color_settings=false;
 			}
 			if (GUI.Button(new Rect(3*k,2*k,2*k,k/2),"Отключить")) 
 			{
 				vertex_coloring=false;
-				if (existing_chunks.Length!=0) 
+				if (playzone.Count!=0) 
 				{
-					foreach (GameObject c in existing_chunks) 
+					foreach (Chunk c in playzone) 
 					{
 					c.GetComponent<MeshRenderer>().material=normal_material;
 					}
@@ -296,7 +301,7 @@ public class Drawer : MonoBehaviour {
 		if (grid) {
 			if (GUI.Button(new Rect(k,3*k,1.5f*k,k/2),"Включить")) 
 			{
-				foreach (GameObject c in existing_chunks) {
+				foreach (Chunk c in playzone) {
 				if (c!=null) 
 				{
 					Mesh m=c.GetComponent<MeshFilter>().mesh;
@@ -345,7 +350,7 @@ public class Drawer : MonoBehaviour {
 			}
 			if (GUI.Button(new Rect(2.5f*k,3*k,1.5f*k,k/2),"Отключить")) 
 			{
-				foreach (GameObject c in existing_chunks) 
+				foreach (Chunk c in playzone) 
 				{
 					if (c==null) continue;
 					int i=0;
