@@ -65,11 +65,16 @@ public class Drawer : MonoBehaviour {
 		{
 			using (StreamReader sr = new StreamReader(path)) 
 			{
-				chunk.ID=int.Parse(sr.ReadLine().Substring(3));
-				chunk.grid_pos_x=int.Parse(sr.ReadLine().Substring(5));
-				chunk.grid_pos_y=int.Parse(sr.ReadLine().Substring(5));
-				chunk.SetBiome(sr.ReadLine().Substring(6));
-				chunk.BiomeName=sr.ReadLine().Substring(10);
+				dstring=sr.ReadLine();
+				if (dstring.Length>3)	chunk.ID=int.Parse(dstring.Substring(3));
+				dstring=sr.ReadLine();
+				if (dstring.Length>5)	chunk.grid_pos_x=int.Parse(sr.ReadLine().Substring(5));
+				dstring=sr.ReadLine();
+				if (dstring.Length>5)	chunk.grid_pos_y=int.Parse(sr.ReadLine().Substring(5));
+				dstring=sr.ReadLine();
+				if (dstring.Length>6)	chunk.SetBiome(sr.ReadLine().Substring(6));
+				dstring=sr.ReadLine();
+				if (dstring.Length>10)	chunk.BiomeName=sr.ReadLine().Substring(10);
 				sr.ReadLine(); //skip "Cords"
 				while (sr.Peek()>=0&&ix<chunk_size) 
 				{ 
@@ -115,7 +120,7 @@ public class Drawer : MonoBehaviour {
 		{
 			for (int j=0;j<chunk_size;j++) 
 			{
-				vertices[c] = new Vector3(j,vertex_array[i,j]*height_coefficient,chunk_size-i-1);
+				vertices[c] = new Vector3(j-chunk_size/2.0f,vertex_array[i,j]*height_coefficient,chunk_size/2.0f-i);
 				sum_height+=vertices[c].y;
 				c++;
 			}
@@ -178,40 +183,43 @@ public class Drawer : MonoBehaviour {
 	{
 		if (firstgen)
 		{	
-			List<Vector2> chunks_numbers=GetBlocksInCirle(radius,Vector2.zero);
+			if (playzone.Count>0)	{foreach (Chunk ch in playzone) Destroy(ch.gameObject);}
 			playzone.Clear();
 		//if (use_constant_address) path=constant_address+n;
 		//else path=Application.dataPath+"/"+n;
 
 		string path="";
 		Chunk chunk;
+		List<Vector2> chunks_numbers=GetBlocksInCirle(radius,Vector2.zero);
+			if (radius==1) chunks_numbers=new List<Vector2>{Vector2.zero};
 
 			foreach (Vector2 pos in chunks_numbers) 
 			{
-				print (pos);
-				path=folder_address+"/Chunk ("+pos.x.ToString()+","+pos.y.ToString()+").json";
+				//print (pos);
+				path=folder_address+"Chunk ("+pos.x.ToString()+","+pos.y.ToString()+").json";
 				chunk=LoadChunk(path);
 				if (chunk!=null)	
 				{
 					chunk.gameObject.layer=8;
 					chunk.gameObject.AddComponent<MeshCollider>();
 					playzone.Add(chunk);
-					chunk.transform.position=new Vector3(pos.x*chunk_size-1*pos.x,0,pos.y*chunk_size-1*pos.y);
+					chunk.transform.position=new Vector3(pos.x*chunk_size,0,pos.y*chunk_size);
 				}
+				else print("no chunk "+path);
 			}	
 		}
 	}
 
 	List<Vector2> GetBlocksInCirle(int radius, Vector2 pos)
 	{
-		Vector2 a,b,c,d;              // c d
+		Vector2 a,b,c,d;              									 // c d
 		List<Vector2> blocks=new List<Vector2>();	 // a b
 		int count=0;
-		for (int x=(int)pos.x-radius;x<(int)pos.x+radius;x++)
+		for (int x=(int)(pos.x-radius);x<=(int)(pos.x+radius);x++)
 		{
-			for (int y=(int)pos.y-radius;y<(int)pos.y+radius;y++)
+			for (int y=(int)(pos.y-radius);y<=(int)(pos.y+radius);y++)
 			{
-				a=new Vector2(x,y); b=new Vector2(x+1,y); c=new Vector2(x,y+1);d=new Vector2(x+1,y+1);
+				a=new Vector2(x-0.5f,y-0.5f); b=new Vector2(x+0.5f,y-0.5f); c=new Vector2(x-0.5f,y+0.5f);d=new Vector2(x+0.5f,y+0.5f);
 				count=0;
 				if (Vector2.Distance(a,pos)<radius) count++; 
 				if (Vector2.Distance(b,pos)<radius) count++; 
@@ -227,11 +235,11 @@ public class Drawer : MonoBehaviour {
 		if (!genered) {
 			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-3*k,2*k,k),"Путь до папки с данными:");
 			folder_name=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2-2*k,4*k,k),folder_name);
-			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,2*k,k),"Радиус игровой области ( в чанках):");
-			matrix_radius_s=GUI.TextField(new Rect(Screen.width/2,Screen.height/2,2*k,k),matrix_radius_s);
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2-k,3*k,k),"Радиус игровой области ( в чанках):");
+			matrix_radius_s=GUI.TextField(new Rect(Screen.width/2+k,Screen.height/2-k,k,k/2),matrix_radius_s);
 
-			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2+2*k,2*k,k/2),"Коэффициент высоты");
-			hc_string=GUI.TextField(new Rect(Screen.width/2-2*k,Screen.height/2+2.5f*k,k,k/2),hc_string);
+			GUI.Label(new Rect(Screen.width/2-2*k,Screen.height/2,3*k,k),"Коэффициент высоты");
+			hc_string=GUI.TextField(new Rect(Screen.width/2+k,Screen.height/2,k,k/2),hc_string);
 
 			if (GUI.Button(new Rect(Screen.width/2-k,Screen.height/2+k,2*k,k),"Сгенерировать")) {
 				PlayerPrefs.SetString("previous_folder_name",folder_name);
